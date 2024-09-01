@@ -1,13 +1,15 @@
-use std::collections::BTreeMap;
+use hashlink::LinkedHashMap as HashLinkMap;
 
 use super::prelude::*;
 
-table!(StdRwLock, BTreeMap, Value, <K>);
+table!(StdRwLock, HashLinkMap, Value, <K, H>);
 
 impl_collection! {
-    |K| StdRwLockBTreeMapTable<K>;
-    with_capacity |_capacity| {
-        StdRwLock::new(BTreeMap::new())
+    |K, H| StdRwLockHashLinkMapTable<K, H>;
+    with_capacity |capacity| {
+        StdRwLock::new(
+            HashLinkMap::with_capacity_and_hasher(capacity, H::default()),
+        )
     };
     get |self, key|  {
         self.0.read().unwrap().get(key).is_some()
@@ -23,12 +25,14 @@ impl_collection! {
     }
 }
 
-table!(ParkingLotRwLock, BTreeMap, Value, <K>);
+table!(ParkingLotRwLock, HashLinkMap, Value, <K, H>);
 
 impl_collection! {
-    |K| ParkingLotRwLockBTreeMapTable<K>;
-    with_capacity |_capacity| {
-        ParkingLotRwLock::new(BTreeMap::new())
+    |K, H| ParkingLotRwLockHashLinkMapTable<K, H>;
+    with_capacity |capacity| {
+        ParkingLotRwLock::new(
+            HashLinkMap::with_capacity_and_hasher(capacity, H::default()),
+        )
     };
     get |self, key|  {
         self.0.read().get(key).is_some()

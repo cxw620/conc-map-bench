@@ -1,61 +1,57 @@
-use std::hash::{BuildHasher, Hash};
-use std::sync::Arc;
+use scc::{hash_map::HashMap as SccMap, HashIndex as SccIndex, LinkedList};
 
-use super::Value;
-use bustle::*;
-use scc::hash_map::{Entry, HashMap};
+use super::prelude::*;
 
-#[derive(Clone)]
-pub struct SccMapTable<K, H>(Arc<HashMap<K, Value, H>>)
-where
-    K: Eq + Hash,
-    H: BuildHasher;
+table!(SccMap, Value, <K, H>);
 
-impl<K, H> Collection for SccMapTable<K, H>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Hash + Eq + std::fmt::Debug,
-    H: BuildHasher + Default + Send + Sync + 'static + Clone,
-{
-    type Handle = Self;
-
-    fn with_capacity(capacity: usize) -> Self {
-        Self(Arc::new(HashMap::with_capacity_and_hasher(
-            capacity,
-            H::default(),
-        )))
-    }
-
-    fn pin(&self) -> Self::Handle {
-        self.clone()
-    }
-}
-
-impl<K, H> CollectionHandle for SccMapTable<K, H>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Hash + Eq + std::fmt::Debug,
-    H: BuildHasher + Default + Send + Sync + 'static + Clone,
-{
-    type Key = K;
-
-    fn get(&mut self, key: &Self::Key) -> bool {
+impl_collection! {
+    |K, H| SccMapTable<K, H>;
+    with_capacity |capacity| {
+        SccMap::with_capacity_and_hasher(capacity, H::default())
+    };
+    get |self, key|  {
         self.0.read(key, |_, v| *v).is_some()
-    }
-
-    fn insert(&mut self, key: &Self::Key) -> bool {
+    };
+    insert |self, key| {
         self.0.insert(*key, 0).is_ok()
-    }
-
-    fn remove(&mut self, key: &Self::Key) -> bool {
+    };
+    remove |self, key| {
         self.0.remove(key).is_some()
-    }
-
-    fn update(&mut self, key: &Self::Key) -> bool {
+    };
+    update |self, key| {
         match self.0.entry(*key) {
-            Entry::Occupied(mut v) => {
+            scc::hash_map::Entry::Occupied(mut v) => {
                 *v.get_mut() += 1;
                 true
             }
-            Entry::Vacant(_) => false,
+            scc::hash_map::Entry::Vacant(_) => false,
+        }
+    }
+}
+
+table!(SccIndex, Value, <K, H>);
+
+impl_collection! {
+    |K, H| SccIndexTable<K, H>;
+    with_capacity |capacity| {
+        SccIndex::with_capacity_and_hasher(capacity, H::default())
+    };
+    get |self, key|  {
+        self.0.peek_with(key, |_, v| *v).is_some()
+    };
+    insert |self, key| {
+        self.0.insert(*key, 0).is_ok()
+    };
+    remove |self, key| {
+        self.0.remove(key)
+    };
+    update |self, key| {
+        match self.0.entry(*key) {
+            scc::hash_index::Entry::Occupied(mut v) => {
+                unsafe {*v.get_mut() += 1};
+                true
+            }
+            scc::hash_index::Entry::Vacant(_) => false,
         }
     }
 }

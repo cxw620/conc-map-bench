@@ -1,80 +1,43 @@
-use std::hash::{BuildHasher, Hash};
-use std::sync::Arc;
+use super::prelude::*;
 
-use bustle::*;
-use parking_lot::Mutex;
+type Evmap<K, V, H> = (
+    Arc<ParkingLotMutex<evmap::ReadHandle<K, V, (), H>>>,
+    Arc<ParkingLotMutex<evmap::WriteHandle<K, V, (), H>>>,
+);
 
-use super::Value;
+table!(Evmap, Value, <K, H>, NOARC);
 
-#[derive(Clone)]
-pub struct EvmapTable<K: Hash + Eq + Clone, H: BuildHasher + Clone> {
-    rd: Arc<Mutex<evmap::ReadHandle<K, Value, (), H>>>,
-    wr: Arc<Mutex<evmap::WriteHandle<K, Value, (), H>>>,
-}
-
-impl<K, H> Collection for EvmapTable<K, H>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Hash + Eq,
-    H: BuildHasher + Default + Send + Sync + 'static + Clone,
-{
-    type Handle = EvmapTableHandle<K, H>;
-
-    fn with_capacity(capacity: usize) -> Self {
+impl_collection! {
+    |K, H| EvmapTable<K, H>;
+    with_capacity |capacity| {
         let (rd, wr) = evmap::Options::default()
             .with_hasher(H::default())
             .with_capacity(capacity)
             .construct();
 
-        Self {
-            rd: Arc::new(Mutex::new(rd)),
-            wr: Arc::new(Mutex::new(wr)),
-        }
-    }
-
-    fn pin(&self) -> Self::Handle {
-        EvmapTableHandle {
-            rd: self.rd.lock().clone(),
-            wr: self.wr.clone(),
-        }
-    }
-}
-
-pub struct EvmapTableHandle<K: Hash + Eq + Clone, H: BuildHasher + Clone> {
-    rd: evmap::ReadHandle<K, u32, (), H>,
-    wr: Arc<Mutex<evmap::WriteHandle<K, u32, (), H>>>,
-}
-
-impl<K, H> CollectionHandle for EvmapTableHandle<K, H>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Hash + Eq,
-    H: BuildHasher + Default + Send + Sync + 'static + Clone,
-{
-    type Key = K;
-
-    fn get(&mut self, key: &Self::Key) -> bool {
-        self.rd.get_one(key).is_some()
-    }
-
-    fn insert(&mut self, key: &Self::Key) -> bool {
-        let prev = self.rd.get_one(key).is_none();
-        self.wr.lock().insert(*key, 0).refresh();
+        (Arc::new(ParkingLotMutex::new(rd)), Arc::new(ParkingLotMutex::new(wr)))
+    };
+    get |self, key|  {
+        self.0.0.lock().get_one(key).is_some()
+    };
+    insert |self, key| {
+        let prev = self.0.0.lock().get_one(key).is_none();
+        self.0.1.lock().insert(*key, 0).refresh();
         prev
-    }
-
-    fn remove(&mut self, key: &Self::Key) -> bool {
-        let prev = self.rd.get_one(key).is_some();
-        self.wr.lock().empty(*key).refresh();
+    };
+    remove |self, key| {
+        let prev = self.0.0.lock().get_one(key).is_some();
+        self.0.1.lock().empty(*key).refresh();
         prev
-    }
-
-    fn update(&mut self, key: &Self::Key) -> bool {
-        let val = match self.rd.get_one(key) {
+    };
+    update |self, key| {
+        let val = match self.0.0.lock().get_one(key) {
             Some(val) => *val + 1,
             None => return false,
         };
 
-        let prev = self.rd.get_one(key).is_some();
-        self.wr.lock().update(*key, val).refresh();
+        let prev = self.0.0.lock().get_one(key).is_some();
+        self.0.1.lock().update(*key, val).refresh();
         prev
     }
 }

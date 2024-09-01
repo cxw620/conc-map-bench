@@ -1,55 +1,29 @@
-use std::sync::Arc;
+use crossbeam_skiplist::SkipMap as CrossbeamSkipMap;
 
-use bustle::*;
-use crossbeam_skiplist::SkipMap;
-use parking_lot::Mutex;
+use super::prelude::*;
 
-use super::Value;
+table!(CrossbeamSkipMap, ParkingLotMutex<Value>, <K>);
 
-pub struct CrossbeamSkipMapTable<K>(Arc<SkipMap<K, Mutex<Value>>>);
-
-impl<K> Collection for CrossbeamSkipMapTable<K>
-where
-    K: Send + Sync + From<u64> + Copy + Ord + 'static,
-{
-    type Handle = Self;
-
-    fn with_capacity(_: usize) -> Self {
-        Self(Arc::new(SkipMap::new()))
-    }
-
-    fn pin(&self) -> Self::Handle {
-        Self(self.0.clone())
-    }
-}
-
-impl<K> CollectionHandle for CrossbeamSkipMapTable<K>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Ord,
-{
-    type Key = K;
-
-    fn get(&mut self, key: &Self::Key) -> bool {
+impl_collection! {
+    |K| CrossbeamSkipMapTable<K>;
+    with_capacity |_capacity| {
+        CrossbeamSkipMap::new()
+    };
+    get |self, key|  {
         self.0.get(key).is_some()
-    }
-
-    fn insert(&mut self, key: &Self::Key) -> bool {
+    };
+    insert |self, key| {
         let map = &mut self.0;
         let prev = map.get(key).is_none();
-        map.insert(*key, Mutex::new(0));
+        map.insert(*key, ParkingLotMutex::new(0));
         prev
-    }
-
-    fn remove(&mut self, key: &Self::Key) -> bool {
+    };
+    remove |self, key| {
         self.0.remove(key).is_some()
-    }
-
-    fn update(&mut self, key: &Self::Key) -> bool {
-        self.0
-            .get(key)
-            .map(|e| {
-                *e.value().lock() += 1;
-            })
-            .is_some()
+    };
+    update |self, key| {
+        self.0.get(key).map(|e| {
+            *e.value().lock() += 1;
+        }).is_some()
     }
 }

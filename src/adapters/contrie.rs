@@ -1,56 +1,26 @@
-use std::hash::{BuildHasher, Hash};
-use std::{fmt::Debug, sync::Arc};
+use contrie::ConMap as Contrie;
 
-use bustle::*;
-use contrie::ConMap;
-use parking_lot::Mutex;
+use super::prelude::*;
 
-use super::Value;
+table!(Contrie, ParkingLotMutex<Value>, <K, H>);
 
-#[derive(Clone)]
-pub struct ContrieTable<K: Eq + Hash + 'static, H>(Arc<ConMap<K, Mutex<Value>, H>>);
-
-impl<K, H> Collection for ContrieTable<K, H>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Hash + Eq + Debug,
-    H: BuildHasher + Default + Send + Sync + 'static + Clone,
-{
-    type Handle = Self;
-
-    fn with_capacity(_: usize) -> Self {
-        Self(Arc::new(ConMap::with_hasher(H::default())))
-    }
-
-    fn pin(&self) -> Self::Handle {
-        self.clone()
-    }
-}
-
-impl<K, H> CollectionHandle for ContrieTable<K, H>
-where
-    K: Send + Sync + From<u64> + Copy + 'static + Hash + Eq + Debug,
-    H: BuildHasher + Default + Send + Sync + 'static + Clone,
-{
-    type Key = K;
-
-    fn get(&mut self, key: &Self::Key) -> bool {
+impl_collection! {
+    |K, H| ContrieTable<K, H>;
+    with_capacity |_capacity| {
+        Contrie::with_hasher(H::default())
+    };
+    get |self, key|  {
         self.0.get(key).is_some()
-    }
-
-    fn insert(&mut self, key: &Self::Key) -> bool {
-        self.0.insert(*key, Mutex::new(0)).is_none()
-    }
-
-    fn remove(&mut self, key: &Self::Key) -> bool {
+    };
+    insert |self, key| {
+        self.0.insert(*key, ParkingLotMutex::new(0)).is_none()
+    };
+    remove |self, key| {
         self.0.remove(key).is_some()
-    }
-
-    fn update(&mut self, key: &Self::Key) -> bool {
-        self.0
-            .get(key)
-            .map(|e| {
-                *e.value().lock() += 1;
-            })
-            .is_some()
+    };
+    update |self, key| {
+        self.0.get(key).map(|e| {
+            *e.value().lock() += 1;
+        }).is_some()
     }
 }
